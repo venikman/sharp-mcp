@@ -1,0 +1,34 @@
+# Build outputs
+bin/
+obj/
+
+# User secrets
+secrets.json
+
+# VS / Rider / VS Code
+.vs/
+.idea/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Logs
+*.log
+
+# Dotnet tooling
+*.nupkg
+*.snupkg
+*.tsbuildinfo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# LM Studio cache
+*.lmstudio
+
+# Inspector temp
+bun.lockb
+node_modules/

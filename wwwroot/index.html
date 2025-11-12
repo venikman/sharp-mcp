@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AG-UI Playground</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+        background: #0d1117;
+        color: #f5f5f5;
+      }
+
+      body {
+        margin: 0;
+        display: flex;
+        min-height: 100vh;
+        background: radial-gradient(circle at top, #1c1f2b 0%, #0d1117 55%, #05060a 100%);
+      }
+
+      main {
+        margin: auto;
+        width: min(960px, 95vw);
+        padding: 32px 24px 40px;
+        background: rgba(9, 10, 17, 0.9);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        border-radius: 18px;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+        backdrop-filter: blur(12px);
+      }
+
+      h1 {
+        margin: 0 0 4px;
+        font-size: clamp(1.6rem, 4vw, 2.1rem);
+      }
+
+      .subtitle {
+        margin: 0 0 20px;
+        color: #9caac9;
+        font-size: 0.95rem;
+      }
+
+      .status-card {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px 32px;
+        padding: 16px 20px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.02);
+        font-size: 0.9rem;
+      }
+
+      .status-card span {
+        color: #8fb1ff;
+        font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+      }
+
+      .transcript {
+        margin: 24px 0;
+        padding: 18px;
+        height: min(60vh, 520px);
+        overflow-y: auto;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(2, 3, 6, 0.65);
+      }
+
+      .bubble {
+        max-width: 85%;
+        padding: 12px 16px;
+        border-radius: 16px;
+        line-height: 1.45;
+        margin-bottom: 12px;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .bubble.user {
+        margin-left: auto;
+        background: linear-gradient(135deg, #1f82ff, #8740ff);
+        color: white;
+      }
+
+      .bubble.assistant {
+        background: rgba(255, 255, 255, 0.07);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+      }
+
+      .bubble.system {
+        width: fit-content;
+        margin: 0 auto 12px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        font-size: 0.82rem;
+        color: #b0c4ff;
+        background: rgba(121, 146, 255, 0.16);
+        border: 1px solid rgba(121, 146, 255, 0.3);
+      }
+
+      form {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      textarea {
+        resize: vertical;
+        min-height: 120px;
+        max-height: 220px;
+        padding: 14px 16px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        background: rgba(255, 255, 255, 0.04);
+        color: inherit;
+        font-size: 1rem;
+      }
+
+      textarea:focus {
+        outline: none;
+        border-color: #4b89ff;
+        box-shadow: 0 0 0 1px rgba(75, 137, 255, 0.4);
+      }
+
+      button {
+        align-self: flex-end;
+        padding: 11px 22px;
+        border-radius: 999px;
+        border: none;
+        font-size: 0.95rem;
+        font-weight: 600;
+        cursor: pointer;
+        color: white;
+        background: linear-gradient(135deg, #1f82ff, #8740ff);
+        box-shadow: 0 10px 25px rgba(74, 129, 255, 0.35);
+      }
+
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        box-shadow: none;
+      }
+
+      .error {
+        color: #ff9eb3;
+      }
+
+      @media (max-width: 640px) {
+        .bubble {
+          max-width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>AG-UI Playground</h1>
+        <p class="subtitle">
+          Minimal browser client that talks to your locally hosted AG-UI endpoint.
+          Update <code>Program.cs</code> to point at any model served through LM Studio.
+        </p>
+      </header>
+
+      <section class="status-card" aria-live="polite">
+        <div>Endpoint: <span>POST <code>/agui</code></span></div>
+        <div>Thread ID: <span id="thread-id"></span></div>
+        <div>Status: <span id="run-status">idle</span></div>
+      </section>
+
+      <section id="transcript" class="transcript" aria-live="polite"></section>
+
+      <form id="chat-form">
+        <label for="message">Message</label>
+        <textarea id="message" placeholder="Ask your agent anything..." required></textarea>
+        <button type="submit">Send</button>
+      </form>
+    </main>
+
+    <script>
+      (() => {
+        const transcriptEl = document.getElementById("transcript");
+        const threadLabel = document.getElementById("thread-id");
+        const statusEl = document.getElementById("run-status");
+        const form = document.getElementById("chat-form");
+        const messageInput = document.getElementById("message");
+
+        let threadId = window.crypto?.randomUUID
+          ? `thread_${window.crypto.randomUUID()}`
+          : `thread_${Date.now()}`;
+        let activeAssistantBubble = null;
+
+        threadLabel.textContent = threadId;
+
+        form.addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const content = messageInput.value.trim();
+          if (!content) {
+            return;
+          }
+
+          appendBubble("user", content);
+          messageInput.value = "";
+
+          form.querySelector("button").disabled = true;
+          try {
+            await streamToAssistant(content);
+          } catch (error) {
+            console.error(error);
+            appendBubble("system", error instanceof Error ? error.message : String(error));
+          } finally {
+            form.querySelector("button").disabled = false;
+          }
+        });
+
+        function appendBubble(role, text) {
+          const div = document.createElement("div");
+          div.className = `bubble ${role}`;
+          div.textContent = text;
+          transcriptEl.appendChild(div);
+          transcriptEl.scrollTop = transcriptEl.scrollHeight;
+          return div;
+        }
+
+        function updateAssistantBubble(delta) {
+          if (!activeAssistantBubble) {
+            activeAssistantBubble = appendBubble("assistant", "");
+          }
+
+          activeAssistantBubble.textContent += delta;
+          transcriptEl.scrollTop = transcriptEl.scrollHeight;
+        }
+
+        function resetAssistantBubble() {
+          activeAssistantBubble = null;
+        }
+
+        async function streamToAssistant(prompt) {
+          const runId = window.crypto?.randomUUID
+            ? `run_${window.crypto.randomUUID()}`
+            : `run_${Date.now()}`;
+
+          statusEl.textContent = `streaming (${runId})`;
+
+          const payload = {
+            threadId,
+            runId,
+            messages: [
+              {
+                role: "user",
+                content: prompt,
+              },
+            ],
+            context: [],
+          };
+
+          const response = await fetch("/agui", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Accept: "text/event-stream",
+            },
+            body: JSON.stringify(payload),
+          });
+
+          if (!response.ok || !response.body) {
+            const errorText = await response.text();
+            throw new Error(`AG-UI request failed: ${response.status} ${errorText}`);
+          }
+
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = "";
+
+          while (true) {
+            const { value, done } = await reader.read();
+            if (done) {
+              break;
+            }
+
+            buffer += decoder.decode(value, { stream: true });
+            buffer = consumeBuffer(buffer, handleEvent);
+          }
+
+          // Flush remaining buffered events
+          if (buffer.trim()) {
+            consumeBuffer(buffer + "\n\n", handleEvent);
+          }
+
+          statusEl.textContent = "idle";
+          resetAssistantBubble();
+        }
+
+        function consumeBuffer(buffer, callback) {
+          let remainder = buffer;
+          while (true) {
+            const separatorIndex = remainder.indexOf("\n\n");
+            if (separatorIndex === -1) {
+              break;
+            }
+
+            const rawEvent = remainder.slice(0, separatorIndex);
+            remainder = remainder.slice(separatorIndex + 2);
+            const lines = rawEvent.split(/\r?\n/);
+            for (const line of lines) {
+              if (!line.startsWith("data:")) {
+                continue;
+              }
+
+              const jsonPayload = line.slice(5).trim();
+              if (!jsonPayload) {
+                continue;
+              }
+
+              try {
+                const event = JSON.parse(jsonPayload);
+                callback(event);
+              } catch (error) {
+                console.warn("Failed to parse AG-UI event", error);
+              }
+            }
+          }
+
+          return remainder;
+        }
+
+        function handleEvent(event) {
+          switch (event.type) {
+            case "RUN_STARTED":
+              threadId = event.threadId || threadId;
+              threadLabel.textContent = threadId;
+              appendBubble("system", `Run started (runId=${event.runId ?? "unknown"})`);
+              break;
+            case "TEXT_MESSAGE_START":
+              resetAssistantBubble();
+              activeAssistantBubble = appendBubble("assistant", "");
+              break;
+            case "TEXT_MESSAGE_CONTENT":
+              updateAssistantBubble(event.delta ?? "");
+              break;
+            case "TEXT_MESSAGE_END":
+              resetAssistantBubble();
+              break;
+            case "RUN_FINISHED":
+              appendBubble("system", "Run finished");
+              resetAssistantBubble();
+              break;
+            case "RUN_ERROR":
+              appendBubble("system", `Error: ${event.message ?? "Unknown"}`);
+              resetAssistantBubble();
+              statusEl.textContent = "error";
+              break;
+            case "TOOL_CALL_START":
+              appendBubble(
+                "system",
+                `Tool call: ${event.toolName ?? event.tool_call_name ?? "unknown"}`
+              );
+              break;
+            case "TOOL_CALL_RESULT":
+              appendBubble(
+                "system",
+                `Tool result: ${JSON.stringify(event.result ?? event.content)}`
+              );
+              break;
+            default:
+              // No-op for heartbeat/other events
+              break;
+          }
+        }
+      })();
+    </script>
+  </body>
+</html>
